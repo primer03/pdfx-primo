@@ -295,14 +295,21 @@ class _PdfViewState extends State<PdfView> {
               if (!snapshot.hasData) {
                 return pageLoader?.call(context) ?? const SizedBox();
               }
-              return Image(
-                image: PdfPageImageProvider(
-                  pageImages[i],
-                  pageIndexes[i],
-                  document.id,
+              return Align(
+                alignment: pageImages.length == 1
+                    ? Alignment.center
+                    : i == 0
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                child: Image(
+                  image: PdfPageImageProvider(
+                    pageImages[i],
+                    pageIndexes[i],
+                    document.id,
+                  ),
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
                 ),
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
               );
             },
           ),
@@ -322,8 +329,9 @@ class _PdfViewState extends State<PdfView> {
             : children,
       ),
       minScale: PhotoViewComputedScale.contained,
-      maxScale: PhotoViewComputedScale.contained * 3.0,
+      maxScale: PhotoViewComputedScale.contained * 5.0,
       initialScale: PhotoViewComputedScale.contained,
+      gestureDetectorBehavior: HitTestBehavior.opaque,
       heroAttributes: PhotoViewHeroAttributes(
         tag: '${document.id}-spread-${pageIndexes.first}',
       ),

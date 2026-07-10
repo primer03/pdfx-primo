@@ -304,7 +304,37 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('pdfx.spread.1')), findsOneWidget);
+      final spread = find.byKey(const Key('pdfx.spread.1'));
+      expect(spread, findsOneWidget);
+
+      final transforms = find.ancestor(
+        of: spread,
+        matching: find.byType(Transform),
+      );
+      double largestScale() => tester
+          .widgetList<Transform>(transforms)
+          .map((transform) => transform.transform.getMaxScaleOnAxis())
+          .reduce((a, b) => a > b ? a : b);
+
+      final scaleBeforePinch = largestScale();
+      final center = tester.getCenter(spread);
+      final firstFinger = await tester.startGesture(
+        center - const Offset(40, 0),
+        pointer: 1,
+      );
+      final secondFinger = await tester.startGesture(
+        center + const Offset(40, 0),
+        pointer: 2,
+      );
+      await firstFinger.moveBy(const Offset(-60, 0));
+      await secondFinger.moveBy(const Offset(60, 0));
+      await tester.pump();
+
+      expect(largestScale(), greaterThan(scaleBeforePinch));
+
+      await firstFinger.up();
+      await secondFinger.up();
+      await tester.pump(const Duration(milliseconds: 50));
 
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
