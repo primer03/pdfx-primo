@@ -281,6 +281,87 @@ void main() {
       expect(controller.page, 2);
     });
 
+    testWidgets(
+        'setViewportFraction relayouts in place without a loader flash', (
+      tester,
+    ) async {
+      final controller = PdfController(
+        document: PdfDocument.openData(testData),
+        initialPage: 2,
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 800,
+            height: 600,
+            child: PdfView(
+              controller: controller,
+              scrollDirection: Axis.vertical,
+              pageSnapping: false,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final loadingChanges = <PdfLoadingState>[];
+      controller.loadingState.addListener(
+        () => loadingChanges.add(controller.loadingState.value),
+      );
+
+      controller.setViewportFraction(0.5);
+      await tester.pumpAndSettle();
+
+      expect(controller.page, 2);
+      expect(controller.viewportFraction, 0.5);
+      // No loading→success round trip: the document was never reloaded.
+      expect(loadingChanges, isEmpty);
+      // Each PageView item now takes half the viewport main axis.
+      expect(tester.getSize(find.byType(PhotoView).first).height, 300);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+
+    testWidgets('jumpToPage still moves content after switching layout', (
+      tester,
+    ) async {
+      final controller = PdfController(
+        document: PdfDocument.openData(testData),
+      );
+
+      Widget buildView(PdfPageLayout layout) => Directionality(
+            textDirection: TextDirection.ltr,
+            child: SizedBox(
+              width: 800,
+              height: 600,
+              child: PdfView(
+                controller: controller,
+                pageLayout: layout,
+              ),
+            ),
+          );
+
+      await tester.pumpWidget(buildView(PdfPageLayout.single));
+      await tester.pumpAndSettle();
+
+      // Switching layout re-creates the internal PageController; the gallery
+      // must pick up the new instance for navigation to keep working.
+      await tester.pumpWidget(buildView(PdfPageLayout.book));
+      await tester.pumpAndSettle();
+
+      controller.jumpToPage(3);
+      await tester.pumpAndSettle();
+
+      expect(controller.page, 2);
+      expect(find.byKey(const Key('pdfx.spread.1')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+
     testWidgets('default book spread builds the paired-page renderer', (
       tester,
     ) async {

@@ -147,6 +147,12 @@ class _PdfViewState extends State<PdfView> {
     _controller.loadingState.addListener(_onLoadingStateChanged);
   }
 
+  /// Re-runs build after the controller re-creates its PageController
+  /// (e.g. [PdfController.setViewportFraction]) so the gallery attaches it.
+  void _markNeedsRebuild() {
+    if (mounted) setState(() {});
+  }
+
   void _onLoadingStateChanged() {
     switch (_controller.loadingState.value) {
       case PdfLoadingState.loading:
@@ -339,6 +345,10 @@ class _PdfViewState extends State<PdfView> {
   }
 
   Widget _buildLoaded(BuildContext context) => PhotoViewGallery.builder(
+        // PhotoViewGallery captures its pageController once (late final in its
+        // state), so whenever _reInitPageController replaces the controller the
+        // gallery state must be re-created to attach the new one.
+        key: ObjectKey(_controller._pageController),
         builder: (context, index) {
           final document = _controller._document!;
           final pageIndexes = widget.pageLayout.pageIndexesForItem(

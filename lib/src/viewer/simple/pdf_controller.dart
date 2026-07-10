@@ -5,8 +5,9 @@ class PdfController with BasePdfController {
   PdfController({
     required this.document,
     this.initialPage = 1,
-    this.viewportFraction = 1.0,
-  }) : assert(viewportFraction > 0.0);
+    double viewportFraction = 1.0,
+  })  : assert(viewportFraction > 0.0),
+        _viewportFraction = viewportFraction;
 
   @override
   final ValueNotifier<PdfLoadingState> loadingState = ValueNotifier(
@@ -23,7 +24,22 @@ class PdfController with BasePdfController {
   ///
   /// Defaults to 1.0, which means each page fills the viewport in the scrolling
   /// direction.
-  final double viewportFraction;
+  double get viewportFraction => _viewportFraction;
+  double _viewportFraction;
+
+  /// Changes [viewportFraction] in place, keeping the current page.
+  ///
+  /// Re-lays out the attached [PdfView] immediately without reloading the
+  /// document or touching [loadingState], so there is no loader flash.
+  void setViewportFraction(double value) {
+    assert(value > 0.0);
+    if (value == _viewportFraction) return;
+    _viewportFraction = value;
+    if (_pdfViewState != null) {
+      _reInitPageController(page);
+      _pdfViewState!._markNeedsRebuild();
+    }
+  }
 
   _PdfViewState? _pdfViewState;
   PageController? _pageController;
