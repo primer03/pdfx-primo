@@ -9,8 +9,9 @@ class PdfController with BasePdfController {
   }) : assert(viewportFraction > 0.0);
 
   @override
-  final ValueNotifier<PdfLoadingState> loadingState =
-      ValueNotifier(PdfLoadingState.loading);
+  final ValueNotifier<PdfLoadingState> loadingState = ValueNotifier(
+    PdfLoadingState.loading,
+  );
 
   /// Document future for showing in [PdfView]
   Future<PdfDocument> document;
@@ -44,7 +45,8 @@ class PdfController with BasePdfController {
   ///
   /// Jumps the page position from its current value to the given value,
   /// without animation, and without checking if the new value is in range.
-  void jumpToPage(int page) => _pageController!.jumpToPage(page - 1);
+  void jumpToPage(int page) =>
+      _pageController!.jumpToPage(_pageLayout.itemIndexForPage(page));
 
   /// Animates the controlled [PdfView] from the current page to the given page.
   ///
@@ -58,7 +60,7 @@ class PdfController with BasePdfController {
     required Curve curve,
   }) =>
       _pageController!.animateToPage(
-        page - 1,
+        _pageLayout.itemIndexForPage(page),
         duration: duration,
         curve: curve,
       );
@@ -69,12 +71,12 @@ class PdfController with BasePdfController {
   /// The returned [Future] resolves when the animation completes.
   ///
   /// The `duration` and `curve` arguments must not be null.
-  Future<void> nextPage({
-    required Duration duration,
-    required Curve curve,
-  }) =>
-      _pageController!.animateToPage(_pageController!.page!.round() + 1,
-          duration: duration, curve: curve);
+  Future<void> nextPage({required Duration duration, required Curve curve}) =>
+      _pageController!.animateToPage(
+        _pageController!.page!.round() + 1,
+        duration: duration,
+        curve: curve,
+      );
 
   /// Animates the controlled [PdfView] to the previous page.
   ///
@@ -86,8 +88,11 @@ class PdfController with BasePdfController {
     required Duration duration,
     required Curve curve,
   }) =>
-      _pageController!.animateToPage(_pageController!.page!.round() - 1,
-          duration: duration, curve: curve);
+      _pageController!.animateToPage(
+        _pageController!.page!.round() - 1,
+        duration: duration,
+        curve: curve,
+      );
 
   /// Load document
   Future<void> loadDocument(
@@ -105,9 +110,12 @@ class PdfController with BasePdfController {
     if (_pdfViewState == null) return;
 
     try {
-      if (page != initialPage) {
-        _pdfViewState?.widget.onPageChanged?.call(initialPage);
-        pageListenable.value = initialPage;
+      final firstVisiblePage = _pageLayout.firstPageForItem(
+        _pageLayout.itemIndexForPage(initialPage),
+      );
+      if (page != firstVisiblePage) {
+        _pdfViewState?.widget.onPageChanged?.call(firstVisiblePage);
+        pageListenable.value = firstVisiblePage;
       }
       _reInitPageController(initialPage);
       this.initialPage = initialPage;
@@ -123,11 +131,19 @@ class PdfController with BasePdfController {
 
   void _reInitPageController(int initialPage) {
     _pageController?.dispose();
+    final itemIndex = _pageLayout.itemIndexForPage(initialPage);
+    final firstVisiblePage = _pageLayout.firstPageForItem(itemIndex);
+    if (pageListenable.value != firstVisiblePage) {
+      pageListenable.value = firstVisiblePage;
+    }
     _pageController = PageController(
-      initialPage: initialPage - 1,
+      initialPage: itemIndex,
       viewportFraction: viewportFraction,
     );
   }
+
+  PdfPageLayout get _pageLayout =>
+      _pdfViewState?.widget.pageLayout ?? PdfPageLayout.single;
 
   void _attach(_PdfViewState pdfViewState) {
     if (_pdfViewState != null) {

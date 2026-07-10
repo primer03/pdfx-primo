@@ -15,6 +15,54 @@ typedef PDfViewPageRenderer = Future<PdfPageImage?> Function(PdfPage page);
 
 final Lock _lock = Lock();
 
+/// Controls how PDF pages are grouped inside a [PdfView] viewport.
+enum PdfPageLayout {
+  /// Shows one PDF page at a time.
+  single,
+
+  /// Shows pages in pairs starting with pages 1 and 2.
+  ///
+  /// This is useful for newspapers and documents whose first page is not a
+  /// standalone cover.
+  twoUp,
+
+  /// Shows page 1 by itself, then pages 2-3, 4-5, and so on.
+  ///
+  /// This matches the usual layout of a bound book.
+  book,
+}
+
+extension _PdfPageLayoutX on PdfPageLayout {
+  int itemCount(int pagesCount) => switch (this) {
+        PdfPageLayout.single => pagesCount,
+        PdfPageLayout.twoUp => (pagesCount + 1) ~/ 2,
+        PdfPageLayout.book => pagesCount == 0 ? 0 : 1 + pagesCount ~/ 2,
+      };
+
+  int itemIndexForPage(int pageNumber) => switch (this) {
+        PdfPageLayout.single => pageNumber - 1,
+        PdfPageLayout.twoUp => (pageNumber - 1) ~/ 2,
+        PdfPageLayout.book => pageNumber <= 1 ? 0 : 1 + (pageNumber - 2) ~/ 2,
+      };
+
+  int firstPageForItem(int itemIndex) => switch (this) {
+        PdfPageLayout.single => itemIndex + 1,
+        PdfPageLayout.twoUp => itemIndex * 2 + 1,
+        PdfPageLayout.book => itemIndex == 0 ? 1 : itemIndex * 2,
+      };
+
+  List<int> pageIndexesForItem(int itemIndex, int pagesCount) {
+    final firstIndex = firstPageForItem(itemIndex) - 1;
+    final pageIndexes = <int>[firstIndex];
+    if (this != PdfPageLayout.single &&
+        !(this == PdfPageLayout.book && itemIndex == 0) &&
+        firstIndex + 1 < pagesCount) {
+      pageIndexes.add(firstIndex + 1);
+    }
+    return pageIndexes;
+  }
+}
+
 /// Widget for viewing PDF documents
 class PdfView extends StatefulWidget {
   const PdfView({
@@ -27,12 +75,14 @@ class PdfView extends StatefulWidget {
     ),
     this.renderer = _render,
     this.scrollDirection = Axis.horizontal,
+    this.pageLayout = PdfPageLayout.single,
+    this.spreadSpacing = 8,
     this.reverse = false,
     this.pageSnapping = true,
     this.physics,
     this.backgroundDecoration = const BoxDecoration(),
     super.key,
-  });
+  }) : assert(spreadSpacing >= 0);
 
   /// Page management
   final PdfController controller;
@@ -54,6 +104,12 @@ class PdfView extends StatefulWidget {
 
   /// Page turning direction
   final Axis scrollDirection;
+
+  /// How PDF pages are grouped in each viewport.
+  final PdfPageLayout pageLayout;
+
+  /// Space between pages when [pageLayout] shows a two-page spread.
+  final double spreadSpacing;
 
   /// Reverse scroll direction, useful for RTL support
   final bool reverse;
@@ -88,28 +144,52 @@ class _PdfViewState extends State<PdfView> {
   void initState() {
     super.initState();
     _controller._attach(this);
-    _controller.loadingState.addListener(() {
-      switch (_controller.loadingState.value) {
-        case PdfLoadingState.loading:
-          _pages.clear();
-          break;
-        case PdfLoadingState.success:
-          widget.onDocumentLoaded?.call(_controller._document!);
-          break;
-        case PdfLoadingState.error:
-          widget.onDocumentError?.call(_loadingError!);
-          break;
-      }
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    _controller.loadingState.addListener(_onLoadingStateChanged);
+  }
+
+  void _onLoadingStateChanged() {
+    switch (_controller.loadingState.value) {
+      case PdfLoadingState.loading:
+        _pages.clear();
+        break;
+      case PdfLoadingState.success:
+        widget.onDocumentLoaded?.call(_controller._document!);
+        break;
+      case PdfLoadingState.error:
+        widget.onDocumentError?.call(_loadingError!);
+        break;
+    }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
+    _controller.loadingState.removeListener(_onLoadingStateChanged);
     _controller._detach();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant PdfView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.loadingState.removeListener(_onLoadingStateChanged);
+      oldWidget.controller._detach();
+      widget.controller._attach(this);
+      widget.controller.loadingState.addListener(_onLoadingStateChanged);
+    } else if (oldWidget.pageLayout != widget.pageLayout) {
+      final oldPage = _controller.page;
+      _controller._reInitPageController(_controller.page);
+      if (_controller.page != oldPage) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            widget.onPageChanged?.call(_controller.page);
+          }
+        });
+      }
+    }
   }
 
   Future<PdfPageImage> _getPageImage(int pageIndex) =>
@@ -189,32 +269,101 @@ class _PdfViewState extends State<PdfView> {
     PdfDocument document,
   ) =>
       PhotoViewGalleryPageOptions(
-        imageProvider: PdfPageImageProvider(
-          pageImage,
-          index,
-          document.id,
-        ),
+        imageProvider: PdfPageImageProvider(pageImage, index, document.id),
         minScale: PhotoViewComputedScale.contained * 1,
         maxScale: PhotoViewComputedScale.contained * 3.0,
         initialScale: PhotoViewComputedScale.contained * 1.0,
         heroAttributes: PhotoViewHeroAttributes(tag: '${document.id}-$index'),
       );
 
-  Widget _buildLoaded(BuildContext context) => PhotoViewGallery.builder(
-        builder: (context, index) => widget.builders.pageBuilder(
-          context,
-          _getPageImage(index),
-          index,
-          _controller._document!,
+  PhotoViewGalleryPageOptions _spreadBuilder(
+    BuildContext context,
+    List<Future<PdfPageImage>> pageImages,
+    List<int> pageIndexes,
+    PdfDocument document,
+  ) {
+    final pageLoader = widget.builders.pageLoaderBuilder;
+    final children = <Widget>[
+      for (var i = 0; i < pageImages.length; i++)
+        Expanded(
+          child: FutureBuilder<PdfPageImage>(
+            future: pageImages[i],
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text(snapshot.error.toString()));
+              }
+              if (!snapshot.hasData) {
+                return pageLoader?.call(context) ?? const SizedBox();
+              }
+              return Image(
+                image: PdfPageImageProvider(
+                  pageImages[i],
+                  pageIndexes[i],
+                  document.id,
+                ),
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+              );
+            },
+          ),
         ),
-        itemCount: _controller._document?.pagesCount ?? 0,
+    ];
+
+    return PhotoViewGalleryPageOptions.customChild(
+      child: Row(
+        key: Key('pdfx.spread.${pageIndexes.first}'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: pageImages.length == 2
+            ? [
+                children.first,
+                SizedBox(width: widget.spreadSpacing),
+                children.last,
+              ]
+            : children,
+      ),
+      minScale: PhotoViewComputedScale.contained,
+      maxScale: PhotoViewComputedScale.contained * 3.0,
+      initialScale: PhotoViewComputedScale.contained,
+      heroAttributes: PhotoViewHeroAttributes(
+        tag: '${document.id}-spread-${pageIndexes.first}',
+      ),
+    );
+  }
+
+  Widget _buildLoaded(BuildContext context) => PhotoViewGallery.builder(
+        builder: (context, index) {
+          final document = _controller._document!;
+          final pageIndexes = widget.pageLayout.pageIndexesForItem(
+            index,
+            document.pagesCount,
+          );
+          if (widget.pageLayout == PdfPageLayout.single) {
+            return widget.builders.pageBuilder(
+              context,
+              _getPageImage(pageIndexes.single),
+              pageIndexes.single,
+              document,
+            );
+          }
+          final pageImages = pageIndexes.map(_getPageImage).toList();
+          return widget.builders.spreadBuilder?.call(
+                context,
+                pageImages,
+                pageIndexes,
+                document,
+              ) ??
+              _spreadBuilder(context, pageImages, pageIndexes, document);
+        },
+        itemCount: widget.pageLayout.itemCount(
+          _controller._document?.pagesCount ?? 0,
+        ),
         loadingBuilder: (_, __) =>
             widget.builders.pageLoaderBuilder?.call(context) ??
             const SizedBox(),
         backgroundDecoration: widget.backgroundDecoration,
         pageController: _controller._pageController,
         onPageChanged: (index) {
-          final pageNumber = index + 1;
+          final pageNumber = widget.pageLayout.firstPageForItem(index);
           _controller.pageListenable.value = pageNumber;
           widget.onPageChanged?.call(pageNumber);
         },

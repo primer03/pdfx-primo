@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:pdfx/src/renderer/interfaces/platform.dart';
@@ -209,5 +210,104 @@ void main() {
       document!.getPage(1),
       throwsA(isInstanceOf<PdfDocumentAlreadyClosedException>()),
     );
+  });
+
+  group('PdfView page layouts', () {
+    Future<PdfController> pumpLayout(
+      WidgetTester tester, {
+      required PdfPageLayout layout,
+      required int initialPage,
+      required List<List<int>> builtSpreads,
+    }) async {
+      final controller = PdfController(
+        document: PdfDocument.openData(testData),
+        initialPage: initialPage,
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 800,
+            height: 600,
+            child: PdfView(
+              controller: controller,
+              pageLayout: layout,
+              builders: PdfViewBuilders<DefaultBuilderOptions>(
+                options: const DefaultBuilderOptions(),
+                spreadBuilder: (context, images, pageIndexes, document) {
+                  builtSpreads.add(pageIndexes);
+                  return PhotoViewGalleryPageOptions.customChild(
+                    child: const SizedBox.expand(),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      addTearDown(() {
+        controller.dispose();
+      });
+      return controller;
+    }
+
+    testWidgets('twoUp groups pages from the first page', (tester) async {
+      final builtSpreads = <List<int>>[];
+      final controller = await pumpLayout(
+        tester,
+        layout: PdfPageLayout.twoUp,
+        initialPage: 3,
+        builtSpreads: builtSpreads,
+      );
+
+      expect(builtSpreads, contains(equals(<int>[2])));
+      expect(controller.page, 3);
+    });
+
+    testWidgets('book keeps the cover separate and maps initial page', (
+      tester,
+    ) async {
+      final builtSpreads = <List<int>>[];
+      final controller = await pumpLayout(
+        tester,
+        layout: PdfPageLayout.book,
+        initialPage: 3,
+        builtSpreads: builtSpreads,
+      );
+
+      expect(builtSpreads, contains(equals(<int>[1, 2])));
+      expect(controller.page, 2);
+    });
+
+    testWidgets('default book spread builds the paired-page renderer', (
+      tester,
+    ) async {
+      final controller = PdfController(
+        document: PdfDocument.openData(testData),
+        initialPage: 2,
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 800,
+            height: 600,
+            child: PdfView(
+              controller: controller,
+              pageLayout: PdfPageLayout.book,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('pdfx.spread.1')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
   });
 }

@@ -14,6 +14,20 @@ typedef PdfViewPageBuilder = PhotoViewGalleryPageOptions Function(
   PdfDocument document,
 );
 
+typedef PdfViewSpreadBuilder = PhotoViewGalleryPageOptions Function(
+  /// Build context
+  BuildContext context,
+
+  /// Images in this spread, in reading order
+  List<Future<PdfPageImage>> pageImages,
+
+  /// Zero-based PDF page indexes in this spread
+  List<int> pageIndexes,
+
+  /// PDF document
+  PdfDocument document,
+);
+
 typedef PdfViewBuilder<T> = Widget Function(
   /// Build context
   BuildContext context,
@@ -47,6 +61,12 @@ class PdfViewBuilders<T> {
   /// Page builder
   final PdfViewPageBuilder pageBuilder;
 
+  /// Optional builder for [PdfPageLayout.twoUp] and [PdfPageLayout.book].
+  ///
+  /// When omitted, [PdfView] renders the pages side by side with
+  /// [PdfView.spreadSpacing] between them.
+  final PdfViewSpreadBuilder? spreadBuilder;
+
   /// Root view builder
   final PdfViewBuilder<T> builder;
 
@@ -59,6 +79,7 @@ class PdfViewBuilders<T> {
     this.documentLoaderBuilder,
     this.pageLoaderBuilder,
     this.pageBuilder = _PdfViewState._pageBuilder,
+    this.spreadBuilder,
     this.errorBuilder,
   });
 }

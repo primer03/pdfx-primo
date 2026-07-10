@@ -80,6 +80,8 @@ PdfView(
 | reverse  	        | Reverse scroll direction, useful for RTL support                                                               | - / +                  |
 | renderer         	| Custom PdfRenderer options.  See [custom renderer options](#custom-renderer-options)                           | - / +                  |
 | pageSnapping     	| Set to false for mouse wheel scroll on web                                                                     | - / +                  |
+| pageLayout       	| Single page, paired newspaper pages, or book pages with a standalone cover                                      | - / +                  |
+| spreadSpacing    	| Space between pages in a two-page spread                                                                        | - / +                  |
 | physics          	| How the widgets should respond to user input                                                                   | - / +                  |
 | padding          	| Padding for the every page.                                                                                    | + / -                  |
 | minScale          | The minimum document zoom scale.                                                                               | + / -                  |
@@ -95,6 +97,7 @@ PdfView(
 | errorBuilder          	| Show document loading error message                                                               | + / +                                  |
 | builder               	| Root view builder for animate pdf loading state                                                   | + / +                                  |
 | pageBuilder           	| Callback called to render a widget for each page. See [custom page builder](#custom-page-builder) | - / +                                  |
+| spreadBuilder         	| Optional callback used to render a two-page spread                                                | - / +                                  |
 
 ## Additional examples
 
@@ -137,6 +140,26 @@ PdfView(
   onPageChanged: (page) {},
 );
 ```
+
+### Two-page layouts
+```dart
+// Pages 1-2, 3-4, ... (newspaper layout)
+PdfView(
+  controller: pdfController,
+  pageLayout: PdfPageLayout.twoUp,
+);
+
+// Page 1, then pages 2-3, 4-5, ... (book layout)
+PdfView(
+  controller: pdfController,
+  pageLayout: PdfPageLayout.book,
+  spreadSpacing: 8,
+);
+```
+
+Page callbacks and `PdfController.page` report the first visible PDF page in
+the current spread. `jumpToPage` and `animateToPage` accept any PDF page number
+and navigate to the spread containing that page.
 
 ### Show actual page number & all pages count
 ```dart
