@@ -45,8 +45,11 @@ class PdfController with BasePdfController {
   ///
   /// Jumps the page position from its current value to the given value,
   /// without animation, and without checking if the new value is in range.
-  void jumpToPage(int page) =>
-      _pageController!.jumpToPage(_pageLayout.itemIndexForPage(page));
+  void jumpToPage(int page) {
+    final itemIndex = _pageLayout.itemIndexForPage(page);
+    _setCurrentItem(itemIndex);
+    _pageController!.jumpToPage(itemIndex);
+  }
 
   /// Animates the controlled [PdfView] from the current page to the given page.
   ///
@@ -144,6 +147,14 @@ class PdfController with BasePdfController {
 
   PdfPageLayout get _pageLayout =>
       _pdfViewState?.widget.pageLayout ?? PdfPageLayout.single;
+
+  void _setCurrentItem(int itemIndex) {
+    final firstVisiblePage = _pageLayout.firstPageForItem(itemIndex);
+    if (pageListenable.value == firstVisiblePage) return;
+
+    pageListenable.value = firstVisiblePage;
+    _pdfViewState?.widget.onPageChanged?.call(firstVisiblePage);
+  }
 
   void _attach(_PdfViewState pdfViewState) {
     if (_pdfViewState != null) {

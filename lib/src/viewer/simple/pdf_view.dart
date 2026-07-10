@@ -371,9 +371,7 @@ class _PdfViewState extends State<PdfView> {
         backgroundDecoration: widget.backgroundDecoration,
         pageController: _controller._pageController,
         onPageChanged: (index) {
-          final pageNumber = widget.pageLayout.firstPageForItem(index);
-          _controller.pageListenable.value = pageNumber;
-          widget.onPageChanged?.call(pageNumber);
+          _controller._setCurrentItem(index);
         },
         scrollDirection: widget.scrollDirection,
         reverse: widget.reverse,

@@ -288,6 +288,7 @@ void main() {
         document: PdfDocument.openData(testData),
         initialPage: 2,
       );
+      final changedPages = <int>[];
 
       await tester.pumpWidget(
         Directionality(
@@ -298,6 +299,7 @@ void main() {
             child: PdfView(
               controller: controller,
               pageLayout: PdfPageLayout.book,
+              onPageChanged: changedPages.add,
             ),
           ),
         ),
@@ -335,6 +337,13 @@ void main() {
       await firstFinger.up();
       await secondFinger.up();
       await tester.pump(const Duration(milliseconds: 50));
+
+      changedPages.clear();
+      controller.jumpToPage(1);
+      expect(controller.page, 1);
+      expect(changedPages, <int>[1]);
+      await tester.pump();
+      expect(changedPages, <int>[1]);
 
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
